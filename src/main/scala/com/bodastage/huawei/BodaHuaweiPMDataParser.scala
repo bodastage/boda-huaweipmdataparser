@@ -24,7 +24,7 @@ object BodaHuaweiPMDataParser{
         throw new Exception(args(0).toString)
       }
 
-      println("filename,start_time,file_format_version,vendor_name,element_type,managed_element,meas_info_id,gran_period_duration,gran_period_endtime,rep_period_duration,counter_id,counter_value")
+      println("filename,start_time,file_format_version,vendor_name,element_type,managed_element,meas_info_id,gran_period_duration,gran_period_endtime,rep_period_duration,meas_obj_ldn,counter_id,counter_value")
 
       this.processFileOrDirectory(args(0))
 
@@ -153,7 +153,7 @@ object BodaHuaweiPMDataParser{
 
           if (tag == "measValue") {
             for (m <- attrs) {
-              if (m.key == "measObjLdn") measObjLdn = m.value.toString()
+              if (m.key == "measObjLdn") measObjLdn = this.toCSVFormat(m.value.toString())
             }
           }
 
@@ -175,7 +175,7 @@ object BodaHuaweiPMDataParser{
               val counterVal : String = v
               val counterId: String = measTypes(i)
 
-              println(s"${getFileBaseName(fileName)},$startTime,$fileFormatVersion,$vendorName,$elementType,$managedElementUserLabel,$measInfoId,$granPeriodDuration,$granPeriodEndTime,$repPeriodDuration,$counterId,$counterVal")
+              println(s"${getFileBaseName(fileName)},$startTime,$fileFormatVersion,$vendorName,$elementType,$managedElementUserLabel,$measInfoId,$granPeriodDuration,$granPeriodEndTime,$repPeriodDuration,$measObjLdn,$counterId,$counterVal")
             }
 
           }
