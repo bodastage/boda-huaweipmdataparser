@@ -3,8 +3,10 @@ Parses Huawei performance XML files to csv
 
 # Usage
 ```
-usage: java -jar boda-huaweipmdataparser.jar input_file
+java -jar boda-huaweipmdataparser.jar -i FILENAME.xml
+java -jar boda-huaweipmdataparser.jar -i FILENAME.gz
 ```
+
 
 
 # Download and installation

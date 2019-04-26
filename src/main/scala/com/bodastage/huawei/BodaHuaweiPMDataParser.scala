@@ -9,24 +9,58 @@ import java.nio.file.Paths
 import java.nio.file.Files
 import scala.xml.XML
 import scala.collection.mutable.ListBuffer
+import scopt.OParser
+import java.util.zip.GZIPInputStream
+import java.io.BufferedInputStream
+import java.io.FileInputStream
+
+case class Config(
+                   in: File = new File("."))
 
 object BodaHuaweiPMDataParser{
   def main(args: Array[String]): Unit = {
 
-    if(args.length != 1){
-      println("usage: java -jar boda-huaweipmdataparser.jar input_file")
-      sys.exit(1)
+    val builder = OParser.builder[Config]
+    val parser1 = {
+      import builder._
+      OParser.sequence(
+        programName("boda-huaweipmdataparser"),
+        head("boda-huaweipmdataparser", "0.0.3"),
+        opt[File]('i', "in")
+          .required()
+          .valueName("<file>")
+          .action((x, c) => c.copy(in = x))
+          .validate(f =>
+            if( (!Files.isRegularFile(f.toPath) && !Files.isDirectory(f.toPath))
+              && !Files.isReadable(f.toPath)) failure(s"Failed to access input file/directory called ${f.getName}")
+            else success
+          )
+          .text("input file or directory, required."),
+        help("help").text("prints this usage text"),
+        note(sys.props("line.separator")),
+        note("Parses Huawei performance management XML files to csv. It processes plain text XML and gzipped XML files."),
+        note("Examples:"),
+        note("java -jar boda-huaweipmdataparser.jar -i FILENAME.xml"),
+        note("java -jar boda-huaweipmdataparser.jar -i FILENAME.gz"),
+        note(sys.props("line.separator")),
+        note("Copyright (c) 2019 Bodastage Solutions(http://www.bodastage.com)")
+
+      )
+    }
+
+    var inputFile : String = ""
+    OParser.parse(parser1, args, Config()) match {
+      case Some(config) =>
+        inputFile = config.in.getAbsolutePath
+      case _ =>
+        sys.exit(1)
     }
 
     try{
-      val f : Path = Paths.get(args(0))
-      if( (!Files.isRegularFile(f) && !Files.isDirectory(f)) && !Files.isReadable(f)){
-        throw new Exception(args(0).toString)
-      }
 
       println("filename,start_time,file_format_version,vendor_name,element_type,managed_element,meas_info_id,gran_period_duration,gran_period_endtime,rep_period_duration,meas_obj_ldn,counter_id,counter_value")
 
-      this.processFileOrDirectory(args(0))
+      this.processFileOrDirectory(inputFile)
 
     }catch{
       case ex: Exception => {
@@ -98,7 +132,14 @@ object BodaHuaweiPMDataParser{
 
     //    val outputDirectory = new File(args(1))
 
-    val xml = new XMLEventReader(Source.fromFile(fileName))
+    val contentType = Files.probeContentType(Paths.get(fileName))
+
+    var xml = new XMLEventReader(Source.fromFile(fileName))
+
+    if(contentType == "application/x-gzip"){
+      xml = new XMLEventReader(Source.fromInputStream(this.getGZIPInputStream(fileName)))
+    }
+
     var buf = ArrayBuffer[String]()
 
     for(event <- xml) {
@@ -202,8 +243,12 @@ object BodaHuaweiPMDataParser{
     return csvValue
   }
 
-}
-
-package object BodaHuaweiPMParser {
+  /**
+    * Returns InputFileFrom
+    *
+    * @param s
+    * @return
+    */
+  def getGZIPInputStream(s: String) = new GZIPInputStream(new BufferedInputStream(new FileInputStream(s)))
 
 }
