@@ -29,7 +29,7 @@ object BodaHuaweiPMDataParser{
       import builder._
       OParser.sequence(
         programName("boda-huaweipmdataparser"),
-        head("boda-huaweipmdataparser", "0.1.0"),
+        head("boda-huaweipmdataparser", "0.1.1"),
         opt[File]('i', "in")
           .required()
           .valueName("<file>")
@@ -78,7 +78,7 @@ object BodaHuaweiPMDataParser{
     }
 
     if(showVersion){
-      println("0.1.0")
+      println("0.1.1")
       sys.exit(0);
     }
 
@@ -100,7 +100,8 @@ object BodaHuaweiPMDataParser{
           "rep_period_duration," +
           "meas_objldn," +
           "counter_id," +
-          "counter_value";
+          "counter_value," +
+          "suspect";
         println(header)
       }else{
         outputFolder = outFile.getAbsolutePath();
@@ -213,6 +214,7 @@ object BodaHuaweiPMDataParser{
     var granPeriodDuration: String = ""
     var granPeriodEndTime: String = ""
     var repPeriodDuration: String = ""
+    var suspect: String = ""
 
     var measTypes = new ListBuffer[String] // Counters
     var measObjLdn: String = ""
@@ -255,7 +257,8 @@ object BodaHuaweiPMDataParser{
         "rep_period_duration," +
         "meas_objldn," +
         "counter_id," +
-        "counter_value";
+        "counter_value," +
+        "suspect";
       pw.write(header + "\n");
     }
 
@@ -321,14 +324,18 @@ object BodaHuaweiPMDataParser{
         }
 
         case EvElemEnd(_, tag) => {
+          if (tag == "suspect") {
+            suspect = buf.mkString
+          }
+
           if (tag == "measTypes") {
-            val msTypes = buf.mkString.trim.split(" ")
+            val msTypes = buf.mkString.replaceAll("\\s+"," ").trim().split(" ")
             measTypes = ListBuffer(msTypes: _ *)
           }
 
 
           if (tag == "measResults") {
-            val msResults = buf.mkString.trim.split(" ")
+            val msResults = buf.mkString.replaceAll("\\s+"," ").trim().split(" ")
             for((v,i) <- msResults.view.zipWithIndex){
               val counterVal : String = v
               val counterId: String = measTypes(i)
@@ -346,8 +353,9 @@ object BodaHuaweiPMDataParser{
                 s"$granPeriodEndTime," +
                 s"$repPeriodDuration," +
                 s"${measObjLdn}," +
-                s"$counterId," +
-                s"$counterVal";
+                s"${counterId}," +
+                s"${counterVal}," +
+                s"${suspect}";
 
               if(outputFolder.length == 0) {
                 println(csvRow);
@@ -363,6 +371,8 @@ object BodaHuaweiPMDataParser{
         case _ =>
       }
     }
+
+    if(pw != null ) pw.close();
   }
 
   def toCSVFormat(s: String): String = {
