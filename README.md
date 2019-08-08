@@ -1,10 +1,12 @@
 # boda-huaweipmdataparser
-Parses Huawei performance XML files to csv
+Parses Huawei performance measurement collection XML files to csv
 
 # Usage
 ```
 java -jar boda-huaweipmdataparser.jar -i FILENAME.xml
 java -jar boda-huaweipmdataparser.jar -i FILENAME.gz
+java -jar boda-huaweipmdataparser.jar -i FILENAME.xml -o /path/to/folder 
+java -jar boda-huaweipmdataparser.jar -i FILENAME.gz -o /path/to/folder
 ```
 
 
