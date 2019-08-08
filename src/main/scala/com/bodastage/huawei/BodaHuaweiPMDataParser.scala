@@ -3,21 +3,25 @@ package com.bodastage.huawei
 import scala.io.Source
 import scala.xml.pull._
 import scala.collection.mutable.ArrayBuffer
-import java.io.File
+import java.io.{BufferedInputStream, File, FileInputStream, PrintWriter}
 import java.nio.file.Path
 import java.nio.file.Paths
 import java.nio.file.Files
+
 import scala.xml.XML
 import scala.collection.mutable.ListBuffer
 import scopt.OParser
 import java.util.zip.GZIPInputStream
-import java.io.BufferedInputStream
-import java.io.FileInputStream
 
 case class Config(
-                   in: File = new File("."))
+                   in: File = new File("."),
+                   out: File = null,
+                   version : Boolean = false
+                 )
 
 object BodaHuaweiPMDataParser{
+  var outputFolder: String = "";
+
   def main(args: Array[String]): Unit = {
 
     val builder = OParser.builder[Config]
@@ -25,7 +29,7 @@ object BodaHuaweiPMDataParser{
       import builder._
       OParser.sequence(
         programName("boda-huaweipmdataparser"),
-        head("boda-huaweipmdataparser", "0.0.3"),
+        head("boda-huaweipmdataparser", "0.1.0"),
         opt[File]('i', "in")
           .required()
           .valueName("<file>")
@@ -36,12 +40,25 @@ object BodaHuaweiPMDataParser{
             else success
           )
           .text("input file or directory, required."),
+        opt[File]('o', "out")
+          .valueName("<file>")
+          .action((x, c) => c.copy(out = x))
+          .validate(f =>
+            if( !Files.isDirectory(f.toPath ) && !Files.isReadable(f.toPath)) failure(s"Failed to access outputdirectory called ${f.getName}")
+            else success
+          )
+          .text("output directory required."),
+        opt[Unit]('v', "version")
+          .action((_, c) => c.copy(version = true))
+          .text("Show version"),
         help("help").text("prints this usage text"),
         note(sys.props("line.separator")),
         note("Parses Huawei performance management XML files to csv. It processes plain text XML and gzipped XML files."),
         note("Examples:"),
         note("java -jar boda-huaweipmdataparser.jar -i FILENAME.xml"),
         note("java -jar boda-huaweipmdataparser.jar -i FILENAME.gz"),
+        note("java -jar boda-huaweipmdataparser.jar -i FILENAME.gz -o outputFolder"),
+        note("java -jar boda-huaweipmdataparser.jar -i FILENAME.xml -o outputFolder"),
         note(sys.props("line.separator")),
         note("Copyright (c) 2019 Bodastage Solutions(http://www.bodastage.com)")
 
@@ -49,16 +66,46 @@ object BodaHuaweiPMDataParser{
     }
 
     var inputFile : String = ""
+    var outFile : File = null;
+    var showVersion : Boolean = false;
     OParser.parse(parser1, args, Config()) match {
       case Some(config) =>
         inputFile = config.in.getAbsolutePath
+        outFile = config.out
+        showVersion = config.version
       case _ =>
         sys.exit(1)
     }
 
+    if(showVersion){
+      println("0.1.0")
+      sys.exit(0);
+    }
+
     try{
 
-      println("filename,start_time,file_format_version,vendor_name,element_type,managed_element,meas_info_id,gran_period_duration,gran_period_endtime,rep_period_duration,meas_obj_ldn,counter_id,counter_value")
+      if(outFile != null) outputFolder = outFile.getAbsoluteFile().toString
+
+      if(outputFolder.length == 0){
+        val header : String = "filename," +
+          "collection_begin_time," +
+          "collection_end_time," +
+          "file_format_version," +
+          "vendor_name," +
+          "element_type," +
+          "managed_element," +
+          "meas_infoid," +
+          "gran_period_duration," +
+          "gran_period_endtime," +
+          "rep_period_duration," +
+          "meas_objldn," +
+          "counter_id," +
+          "counter_value";
+        println(header)
+      }else{
+        outputFolder = outFile.getAbsolutePath();
+      }
+
 
       this.processFileOrDirectory(inputFile)
 
@@ -110,6 +157,47 @@ object BodaHuaweiPMDataParser{
   }
 
   /**
+    * Extact the measurement collection start and end time
+    *
+    * @param fileName
+    *
+    * @return array [startTime, endTime]
+    */
+  def extractMeasCollectTime(fileName : String) : Array[String] = {
+    val contentType = Files.probeContentType(Paths.get(fileName))
+
+    var xml = new XMLEventReader(Source.fromFile(fileName))
+
+    if(contentType == "application/x-gzip"){
+      xml = new XMLEventReader(Source.fromInputStream(this.getGZIPInputStream(fileName)))
+    }
+
+    var beginTime:String = "";
+    var endTime:String = "";
+
+    var measCollectionTime:Array[String] = new Array[String](2)
+
+    for(event <- xml) {
+      event match {
+        case EvElemStart(_, tag, attrs, _) => {
+          if (tag == "measCollec") {
+            for (m <- attrs) {
+              if (m.key == "beginTime") beginTime = m.value.toString()
+              if (m.key == "endTime") endTime = m.value.toString()
+            }
+          }
+        }
+        case _ =>
+      }
+    }
+
+    measCollectionTime(0) = beginTime;
+    measCollectionTime(1) = endTime;
+
+    return measCollectionTime;
+  }
+
+  /**
     * Parse a file
     * @param filename
     */
@@ -141,6 +229,35 @@ object BodaHuaweiPMDataParser{
     }
 
     var buf = ArrayBuffer[String]()
+
+    //Get collection time
+    var measCollectionTime:Array[String] = new Array[String](2);
+    measCollectionTime = extractMeasCollectTime(fileName)
+
+    val fileBaseName: String  = getFileBaseName(fileName);
+    var pw : PrintWriter = null;
+    if(outputFolder.length > 0){
+
+      val csvFile : String = outputFolder + File.separator + fileBaseName.replaceAll(".(xml|gz)$",".csv");
+
+      pw  = new PrintWriter(new File(csvFile));
+      val header : String =
+        "file_name," +
+        "collection_begin_time," +
+        "collection_end_time," +
+        "file_format_version," +
+        "vendor_name," +
+        "element_type," +
+        "managed_element," +
+        "meas_infoid," +
+        "gran_period_duration," +
+        "gran_period_endtime," +
+        "rep_period_duration," +
+        "meas_objldn," +
+        "counter_id," +
+        "counter_value";
+      pw.write(header + "\n");
+    }
 
     for(event <- xml) {
       event match {
@@ -216,9 +333,28 @@ object BodaHuaweiPMDataParser{
               val counterVal : String = v
               val counterId: String = measTypes(i)
 
-              println(s"${getFileBaseName(fileName)},$startTime,$fileFormatVersion,$vendorName,$elementType,$managedElementUserLabel,$measInfoId,$granPeriodDuration,$granPeriodEndTime,$repPeriodDuration,$measObjLdn,$counterId,$counterVal")
-            }
+              val csvRow : String =
+                s"${toCSVFormat(getFileBaseName(fileName))}," +
+                s"$startTime," +
+                s"${measCollectionTime(1)}," +
+                s"$fileFormatVersion," +
+                s"${toCSVFormat(vendorName)}," +
+                s"${toCSVFormat(elementType)}," +
+                s"${toCSVFormat(managedElementUserLabel)}," +
+                s"$measInfoId," +
+                s"$granPeriodDuration," +
+                s"$granPeriodEndTime," +
+                s"$repPeriodDuration," +
+                s"${measObjLdn}," +
+                s"$counterId," +
+                s"$counterVal";
 
+              if(outputFolder.length == 0) {
+                println(csvRow);
+              }else{
+                pw.write(csvRow + "\n");
+              }
+            }
           }
 
           buf.clear
